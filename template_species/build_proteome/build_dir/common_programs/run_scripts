@@ -1,0 +1,115 @@
+#!/bin/sh
+
+#Get command prompts
+resource=$1
+chromosomes=$2
+script_dir=$3
+bg_mode=$4
+
+## gobal variable
+array_error=()
+
+
+#get the number of CPUs
+no_in_parallel=`nproc`
+
+#Main loop for running scripts
+for run_no in  $chromosomes
+do
+	#Make script executable
+	chmod +x $script_dir/script$run_no
+		
+	#run script in background
+	if [ $bg_mode == 1 ]; then
+		
+		#Run script
+		$script_dir/script$run_no & 
+ 
+		#get the process ID
+		my_pid=$!
+		
+		# assign pid to array
+	        my_pid_array+=($my_pid)
+
+		#count the number of background processes
+		no_of_proc=$((no_of_proc+1))
+	
+		#we need to wait if a the number of processes exceeds the number of chromosomes to process in parallel (default = number of CPUs)
+		if [ $no_of_proc -eq $no_in_parallel ] 
+		then
+					
+			# Loop whilst number of processes = number in parallel (default = number of CPUs)
+			while [ $no_of_proc -eq $no_in_parallel  ]
+			do
+  			#loop through the pid array
+				for i in "${my_pid_array[@]}" # check if each pid has died yet
+    				do
+
+					#wait for process to finish to get the return code
+					wait $i
+					array_error+=($?)
+
+					ps --pid $i >/dev/null
+
+					if [ $? -gt 0 ]
+					then
+			    			no_of_proc=$((no_of_proc-1))
+						my_pid_array=(${my_pid_array[@]//$i})
+						break
+					fi
+    				done
+    			sleep 2
+			done
+			
+		fi
+		
+
+	#run one script at a time
+	else
+		$script_dir/script$run_no || exit 1
+	
+	fi # if $bg_mode == 1
+
+done
+
+## Need to wait for all processes before the exit if running in background mode
+if [ $bg_mode == 1 ] 
+then
+
+	# get number of elemenets in the pid array
+	count=${#my_pid_array[@]} 
+
+	# counter to be decremented each pass
+	while [ $count -gt 0 ]
+	do
+	  #loop through the pid array
+		for i in "${my_pid_array[@]}" # check if each pid has died yet
+	    	do
+			#wait for process to finish to get the return code
+			wait $i
+			array_error+=($?)
+
+			ps --pid $i >/dev/null
+			if [ $? -gt 0 ]
+			then
+			    let "count -= 1"
+			fi
+	    	done
+	    	sleep 2
+	done
+fi
+
+
+#Check for errors
+for i in "${array_error[@]}" 
+do
+	if [ $i -gt 0 ]
+	then
+	echo "error check" $i
+	   exit 1
+	fi
+done
+
+echo "error check 0"
+
+

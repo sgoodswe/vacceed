@@ -1,0 +1,40 @@
+#!/bin/sh
+#Resource used: Example
+resource=example
+
+#Get command-line arguments
+chromosomes=$1
+prog_dir=$2
+script_dir=$3
+out_dir=$4
+common_dir=$2
+
+#Hard coding
+bg_mode=1 # parallel processing: 1 = ON, 0 = OFF
+filename="eg.txt"
+
+#Main loop for writing scripts
+for chr_no in  $chromosomes
+do
+	#Write the error function to script
+	$common_dir/error_script "$chr_no" "$script_dir"
+	
+	##Program section ##
+
+		# << Add new programs here >>
+
+	echo "echo Chromosome $chr_no" >> $script_dir/script$chr_no 
+	#Step 1
+	echo "script_step=\">> executing step 1\"" >> $script_dir/script$chr_no
+	echo "perl $prog_dir/example1.pl chr$chr_no $out_dir" >> $script_dir/script$chr_no \
+		|| error_exit
+	#Step 2
+	echo "script_step=\">> executing step 2\"" >> $script_dir/script$chr_no
+	echo '$prog_dir/unix_script_1 "$filename" "$out_dir"' >> $script_dir/script$chr_no \
+	|| error_exit
+done
+
+#Run scripts
+$common_dir/run_scripts "$chromosomes" "$script_dir" "$bg_mode" || exit 1 
+
+

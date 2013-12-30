@@ -1,0 +1,67 @@
+#!/bin/sh
+#Resource used: WoLF PSORT
+resource=WoLF_PSORT
+short_name=wolf
+
+#Get command prompts
+proteome_fasta=$1
+proteome_dir=$2
+script_dir=$3
+out_dir=$4
+common_dir=$5
+evidence_dir=$6
+prog_dir=$7
+prot_id_prefix=$8
+
+#hard coding
+bg_mode=1
+species_type="animal" #plant, animal, or fungi
+split_by=`nproc` #default split value is number of CPUs
+
+
+echo "Splitting FASTA file for " $resource >> $LOG_FILE
+perl $common_dir/split_fasta.pl $proteome_dir/tmp_$proteome_fasta $split_by $out_dir
+no_of_files=$?
+if [ $no_of_files == 0 ]; then
+	exit 1
+fi
+
+
+#Main loop for writing scripts
+for file_no in  $(seq 1 $no_of_files)
+do
+	#Write the error function to script
+	$common_dir/error_script "$file_no" "$script_dir"
+
+	#Program section
+	echo "echo Running file $file_no for $resource >> $LOG_FILE" >> $script_dir/script$file_no
+
+	echo "script_step=\"executing WoLF PSORT for $file_no\"" >> $script_dir/script$file_no
+	echo "runWolfPsortSummary $species_type  < $out_dir/file_$file_no.fasta >$out_dir/$short_name$file_no" >> $script_dir/script$file_no
+done
+
+## Run scripts for chromomsomes
+$common_dir/run_scripts "$resource" "$no_of_files" "$script_dir" "$bg_mode" || exit 1
+
+##Tidy up
+echo "Tidying up for " $resource >> $LOG_FILE
+cat $out_dir/${short_name}* > $out_dir/out_${short_name} || exit 1
+rm  $out_dir/${short_name}* || exit 1
+rm  $out_dir/*.fasta || exit 1
+
+#Program section
+
+
+#hard coding for Wolf output format
+input_file=$out_dir/out_${short_name}
+split_char='\s+'
+id_info='1,2,\|'
+evd_headers=$short_name"_score,"$short_name"_annotation"
+ignore_lines=""
+
+
+echo "Executing get_evidence_for_wolf.pl" >> $LOG_FILE
+perl $prog_dir/get_evidence_for_wolf.pl  $input_file $evidence_dir $short_name $split_char $id_info $evd_headers "$ignore_lines" $proteome_dir $proteome_fasta \
+$prot_id_prefix 2>> $LOG_FILE || exit 1
+
+

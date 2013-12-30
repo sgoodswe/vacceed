@@ -1,0 +1,20 @@
+#!/bin/sh
+
+#Get command prompts
+file_no=$1
+script_dir=$2
+
+echo "#!/bin/sh" > $script_dir/script$file_no
+
+#Write the error function to script
+echo " " >> $script_dir/script$file_no
+echo "### Error function" >> $script_dir/script$file_no
+echo "function error_exit" >> $script_dir/script$file_no
+echo "{" >> $script_dir/script$file_no
+echo '   date_time=`date`' >> $script_dir/script$file_no
+echo '   echo ">>ERROR: $script_step at $date_time" >> $LOG_FILE' >> $script_dir/script$file_no
+echo "   exit 1" >> $script_dir/script$file_no
+echo "}">> $script_dir/script$file_no
+echo " " >> $script_dir/script$file_no
+
+exit 0

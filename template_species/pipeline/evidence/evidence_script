@@ -1,0 +1,80 @@
+#!/bin/sh
+#Resource used: EVIDENCE
+resource=evidence
+short_name=evd
+
+#Get command prompts
+prog_dir=$1
+evidence_dir=$2
+proteome_dir=$3
+proteome_fasta=$4
+prot_id_prefix=$5
+train_file=$6
+ignore_predictors=$7
+algorithms=$8
+score_threshold=$9
+ml_threshold=$9
+existence_threshold=${10}
+ 
+
+#hard coding
+predictor_file=$evidence_dir/"ml_predictors"
+candidate_file=$evidence_dir/"evidence_profiles"
+
+
+#Program section
+
+#hard coding for combine_evidence.pl
+output_file=$evidence_dir/"evidence_profiles"
+file_suffix="_evd"
+
+echo "Executing combine_evidence.pl" >> $LOG_FILE
+perl $prog_dir/combine_evidence.pl  $output_file "$file_suffix" $evidence_dir \
+2>> $LOG_FILE || exit 1
+
+echo "Executing get_predictors.pl" >> $LOG_FILE
+perl $prog_dir/get_predictors.pl  $predictor_file $evidence_dir "$ignore_predictors" \
+2>> $LOG_FILE || exit 1
+
+
+## Algorithm abbreviations: ada = Adaptive boosting, knn = k-nearest neighbour classifier, nb = Naive Bayes classifier, 
+## nn = Neural network, rf = Random forest, svm = Support vector machines 
+
+
+#Main loop for running Machine learning algorithms via R
+for algorithm in  $algorithms
+do
+
+	#Run the Rscript 
+	echo "Run Rscript for $algorithm" >> $LOG_FILE
+	Rscript $prog_dir/${algorithm}_wrapper.R "$prog_dir" "$evidence_dir" "$train_file" "$candidate_file" || exit 1
+
+	#Select the appropriate extract predictions program
+	if [ $algorithm == "nn" ]
+	then
+		echo "Executing extract_predictions.pl for $algorithm" >> $LOG_FILE
+		perl $prog_dir/extract_class_predictions.pl  $algorithm $evidence_dir 2>> $LOG_FILE || exit 1
+	
+	elif [ $algorithm == "knn" ]
+	then
+
+		echo "Executing knn_predictions.pl for $algorithm" >> $LOG_FILE
+		perl $prog_dir/extract_knn_predictions.pl  $algorithm $evidence_dir 2>> $LOG_FILE || exit 1
+
+	else
+		echo "Executing extract_predictions.pl for $algorithm" >> $LOG_FILE
+		perl $prog_dir/extract_prob_predictions.pl  $algorithm $evidence_dir 2>> $LOG_FILE || exit 1
+
+	fi
+
+done
+
+
+echo "Executing combine_scores.pl" >> $LOG_FILE
+perl $prog_dir/combine_scores.pl  $evidence_dir $proteome_dir \
+2>> $LOG_FILE || exit 1
+
+echo "Executing get_candidate_fasta.pl" >> $LOG_FILE
+perl $prog_dir/get_candidate_fasta.pl  $proteome_dir/$proteome_fasta $prot_id_prefix $proteome_dir $ml_threshold $existence_threshold    \
+2>> $LOG_FILE || exit 1
+

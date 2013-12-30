@@ -1,0 +1,104 @@
+#!/bin/sh
+#Resource used: ASSEMBLY
+resource=assembly
+short_name=assemb
+
+#Get command prompts
+chromosomes=$1
+prog_dir=$2
+script_dir=$3
+assembly_dir=$4
+proteome_dir=$5
+prot_dir=$6
+prot_file=$7
+map_dir=$8
+map_file=$9
+common_dir=${10}
+prot_id_prefix=${11}
+
+#hard coding
+bg_mode=1
+est_progs="gmap,blat"
+new_prot_file="new_prot.fasta"
+
+
+#Main loop for writing scripts
+for chr_no in  $chromosomes
+do
+
+	#Write the error function to script
+	$common_dir/error_script "$chr_no" "$script_dir"
+
+	#Program section
+	echo "echo \"Chromosome $chr_no\" " >> $script_dir/script$chr_no
+	
+
+	echo "script_step=\"executing merge_fasta.pl\"" >> $script_dir/script$chr_no
+	echo "perl $prog_dir/merge_fasta.pl chr$chr_no $assembly_dir \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	
+	echo "script_step=\"blastn on subject for $chr_no\"" >> $script_dir/script$chr_no
+	query_file=$assembly_dir"/chr"$chr_no"_merged_gene.fasta"
+	subject_file=$assembly_dir"/chr"$chr_no"_merged_gene.fasta"
+	file=$assembly_dir"/chr"$chr_no
+	ext_to_file="_merged_blastn.txt" 
+	output_file=$file$ext_to_file
+	format='"10 evalue qseqid qlen sseqid slen bitscore score pident nident mismatches positive"'
+	echo "blastn -query $query_file -subject $subject_file  -outfmt $format  -max_target_seqs  10 -out $output_file \
+	 || error_exit" >> $script_dir/script$chr_no
+
+
+	echo "script_step=\"e_blastn_new.pl for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $prog_dir/e_blastn_new.pl chr$chr_no  $assembly_dir $est_progs \
+	|| error_exit" >> $script_dir/script$chr_no
+
+
+	echo "script_step=\"blastp on subject for $chr_no\"" >> $script_dir/script$chr_no
+	query_file=$assembly_dir"/chr"$chr_no"_merged_protein.fasta"
+	subject_file=$assembly_dir"/chr"$chr_no"_merged_protein.fasta"
+	file=$assembly_dir"/chr"$chr_no
+	ext_to_file="_merged_blastp.txt" 
+	output_file=$file$ext_to_file
+	format='"10 evalue qseqid qlen sseqid slen bitscore score pident nident mismatches positive"'
+	echo "blastp -query $query_file -subject $subject_file  -outfmt $format  -max_target_seqs 10 -out $output_file \
+	 || error_exit" >> $script_dir/script$chr_no
+
+
+	echo "script_step=\"e_blastp_newpl for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $prog_dir/e_blastp_new.pl chr$chr_no  $assembly_dir $proteome_dir $prot_id_prefix \
+	|| error_exit" >> $script_dir/script$chr_no
+
+
+done
+
+## Run scripts for chromomsomes
+$common_dir/run_scripts "$resource" "$chromosomes" "$script_dir" "$bg_mode" || exit 1
+
+
+#Write the error function to script
+script_no="a"
+$common_dir/error_script "$script_no" "$script_dir"
+
+
+echo "script_step=\">>ERROR: executing assembly.pl\"" >> $script_dir/script$script_no
+echo "perl $prog_dir/assemble.pl $proteome_dir $assembly_dir $map_dir $map_file $prot_dir $prot_file $prot_id_prefix \
+|| error_exit" >> $script_dir/script$script_no
+
+echo "script_step=\">>ERROR: executing build_proteome.pl\"" >> $script_dir/script$script_no
+echo "perl $prog_dir/build_proteome.pl $proteome_dir $prot_dir $prot_file $new_prot_file \
+|| error_exit" >> $script_dir/script$script_no
+
+
+#Make script executable
+chmod +x $script_dir/script$script_no
+
+	
+#run one script at a time
+$script_dir/script$script_no >> $LOG_FILE || exit 1
+	
+	
+
+
+
+

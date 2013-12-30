@@ -1,0 +1,20 @@
+#!/bin/sh
+#Resource used: VALIDATE
+resource=Validate
+short_name=validate
+
+#Get command prompts
+proteome_fasta=$1
+proteome_dir=$2
+prog_dir=$3
+out_dir=$4
+prot_id_prefix=$5
+
+#hard coding
+
+
+#Program section
+
+echo "Executing check_protein_seq.pl" >> $LOG_FILE
+perl $prog_dir/check_protein_seq.pl $proteome_fasta  $proteome_dir $out_dir $short_name $prot_id_prefix \
+2>> $LOG_FILE || exit 1

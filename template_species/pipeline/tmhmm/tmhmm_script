@@ -1,0 +1,73 @@
+#!/bin/sh
+#Resource used: TMHMM
+resource=TMHMM
+short_name=tmhmm
+
+#Get command prompts
+proteome_fasta=$1
+proteome_dir=$2
+script_dir=$3
+out_dir=$4
+common_dir=$5
+evidence_dir=$6
+prot_id_prefix=$7 
+
+#hard coding
+bg_mode=1
+split_by=`nproc` #default split value is number of CPUs
+
+
+echo "Splitting FASTA file for " $resource >> $LOG_FILE
+perl $common_dir/split_fasta.pl $proteome_dir/tmp_$proteome_fasta $split_by $out_dir
+no_of_files=$?
+if [ $no_of_files == 0 ]; then
+	exit 1
+fi
+
+#Main loop for writing scripts
+for file_no in  $(seq 1 $no_of_files)
+do
+	
+	#Write the error function to script
+	$common_dir/error_script "$file_no" "$script_dir"
+
+	#Program section
+	echo "echo Running file $file_no for $resource >> $LOG_FILE" >> $script_dir/script$file_no
+
+	echo "script_step=\"executing TMHMM for $file_no\"" >> $script_dir/script$file_no
+	
+	echo "tmhmm -short -workdir $out_dir $out_dir/file_$file_no.fasta > $out_dir/$short_name$file_no \
+	 2>> $LOG_FILE || error_exit" >> $script_dir/script$file_no
+
+done
+
+## Run scripts for chromomsomes
+$common_dir/run_scripts "$resource" "$no_of_files" "$script_dir" "$bg_mode" || exit 1
+
+##Tidy up
+echo "Tidying up for " $resource >> $LOG_FILE
+cat $out_dir/${short_name}* > $out_dir/out_${short_name} || exit 1
+rm  $out_dir/${short_name}* || exit 1
+rm  $out_dir/*.fasta || exit 1
+rm -r  $out_dir/TMHMM_* || exit
+
+
+#Program section
+
+
+#hard coding for TMHMM output format
+input_file=$out_dir/out_${short_name}
+split_char='\s+'
+id_info='1,2,\|'
+cols_required="3,4,5"
+evd_headers=$short_name"_ExpAA,"$short_name"_First60,"$short_name"_PredHel"
+ignore_lines=""
+extract_value='='
+
+
+echo "Executing get_evidence.pl" >> $LOG_FILE
+perl $common_dir/get_evidence.pl  $input_file $evidence_dir $short_name $prot_id_prefix $split_char $id_info $cols_required $evd_headers "$ignore_lines" \
+$extract_value 2>> $LOG_FILE || exit 1
+
+
+

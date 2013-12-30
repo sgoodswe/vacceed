@@ -1,0 +1,494 @@
+#!/usr/bin/perl
+use strict;
+use Cwd;
+use warnings;
+use Config::Simple;
+use File::HomeDir;
+
+
+#####################################
+# Version 1-00-00
+#####################################
+#Open debug file
+#open DEBUG_FILE,'>debug.txt';
+
+# To run program enter: 
+#	startup.pl <species code>
+#	 e.g species code = tg for toxoplasma
+
+#general global variables
+my $run_type;
+my $code_entered;
+my $email_message;
+my $hash_search_variables;
+
+# variables for startup.ini
+my $code;
+my $species;
+my $type;
+my $config_file;
+
+
+#variables for config file
+my $cfg;
+my $key;
+my $hash;
+
+
+
+#Get the number of  command-line arguments
+my $numArgs = $#ARGV;
+
+if ($numArgs == -1) {
+
+	print "\nERROR: No command-line arguments entered\n";
+	print 'To run pipeline enter species code "e.g. perl startup.pl nc"' . "\n";
+	print 'To build proteome enter build + species code "e.g. perl startup.pl build nc"' . "\n";
+	exit
+
+} else {
+
+   $code_entered = lc ($ARGV[0]);
+   
+   #Check if build + species code is entered
+   if (($code_entered eq "build") && ($numArgs == 0)) { 
+		$run_type = "BUILD";
+		
+		print "\nERROR: No species code entered in command-line\n";
+		print 'To build proteome enter build + species code "e.g. perl startup.pl build nc"' . "\n";
+		exit
+	} elsif ($code_entered eq "build") { 
+		$run_type = "BUILD";
+		
+		#get the species code
+		$code_entered = lc ($ARGV[1]);
+
+	} else {
+		$run_type = "PIPELINE";
+	}
+}
+
+
+#check if startup.ini exists
+if (-e "startup.ini") 
+{
+	# Read the startup.ini
+	open INPUT_FILE,"startup.ini";
+
+}
+else
+{
+	print "\nERROR: startup.ini cannot be found in start directory\n";
+	exit
+}
+
+
+#get home directory
+my $home_dir = File::HomeDir->my_home;
+
+#   startup.ini is in the following format
+#code<species<type e.g. build or pipeline<config<dir
+#nc<Neospora caninum<build<neospora.ini<neospora
+
+while (defined (my $line = <INPUT_FILE>)) 
+{
+	if ($line =~ m/^#/){next};	
+
+	chomp ($line);
+	($code,$species,$type,$config_file) = split (/</,$line);
+
+
+	# Check if there is a code
+	# Check if we have the required data to start
+	if (lc $code ne lc $code_entered ) {
+		$code = "";
+		next;
+	}
+
+	#convert code to lower case species code		
+	$code  = lc ($code);
+	
+	#Only do the following  if the species code entered matches the species in the ini file
+	if ($code_entered eq $code) {
+	
+		if (($run_type eq "BUILD") && (lc ($type) eq "build")) {
+			last;
+			
+		} elsif (($run_type eq "PIPELINE") && (lc ($type) eq "pipeline")) {
+			last;	
+		} else {  
+			$type="";
+		}
+		
+	} 	
+}
+
+# Check if we have the required data to start
+if (!$code)
+{
+	print "\nERROR: Species code not found in Startup.ini\n";
+	exit
+}
+
+# Check if we have the build or pipeline type
+if (!$type)
+{
+	print "\nERROR: $run_type type not specified in Startup.ini\n";
+	exit
+}
+
+
+#check for configuration file
+if (!$config_file) {
+	print "\nERROR: No $run_type configuration file in Startup.ini\n";
+	exit
+}
+
+#Get current directory
+my $current_dir = getcwd();
+
+#Build location and name for config file
+my $config_dir = $current_dir . "/config_dir/";
+my $config =  $config_dir . $config_file;
+
+#check if config file exists
+if (-e $config) 
+{
+	#### Open and  read the configuration file
+	$cfg = new Config::Simple();
+	$cfg->read($config);
+}
+else
+{
+	print "\nERROR: configuration file $config_file cannot be found in directory $config_dir\n";
+	exit
+}
+
+
+######################
+# READ config file 
+######################
+$key = 'Resources.name';
+my @resources = $cfg->param($key);
+
+### Get the Main block
+$key =  'Main';
+my $hash_main_variables = $cfg->param(-block=>$key);
+
+
+### GET certain keys from [MAIN]
+
+#Get e-mail URL 
+$key = 'Main.email_url';
+my $email_url = $cfg->param($key);
+
+#Get the master script name to save commands 
+$key = 'Main.master_script';
+my $master_script = $cfg->param($key);
+
+#Get the YES or NO if only master script is to be created 
+$key = 'Main.build_script_only';
+my $build_script_only = $cfg->param($key);
+
+#Get the log file 
+$key = 'Main.log_file';
+my $log_file = $cfg->param($key);
+$log_file = &check_for_main_variables ($log_file);
+
+
+### Get the Variable block
+$key =  'Variables';
+my $hash_user_variables = $cfg->param(-block=>$key);
+
+
+##### END OF READING CONFIG GENERAL SECTION #####
+
+#Check if logfile contains $HOME
+if ($log_file =~ m/\$HOME/){
+	$log_file =~ s/\$HOME/$home_dir/;
+}
+
+
+# Open the log file
+open LOG_FILE, '>' . $log_file;
+
+## used for buffering
+#my $ofh = select LOG_FILE;
+#$| = 1;
+#select $ofh;
+
+
+if ($run_type eq "PIPELINE") {
+	print "\n>> Pipeline starting at " . localtime(time) . " for the species $species ... please wait\n";
+	print LOG_FILE ">> Pipeline starting at " . localtime(time) . " for the species $species\n";
+} else {
+	print "\n>> Proteome build starting at " . localtime(time) . " for the species $species ... please wait\n";
+	print LOG_FILE ">>Proteome build starting at " . localtime(time) . " for the species $species\n";
+}
+print "[On completion an e-mail will be sent to: $email_url]\n";
+
+# Open the Master file
+open MASTER_FILE,'>' . $master_script;
+print MASTER_FILE "#!/bin/sh\n";
+
+# print global variable for logfile to master script
+print MASTER_FILE "\nexport LOG_FILE=$log_file\n";
+
+#print current directory to log file
+print LOG_FILE  "Working directory = $current_dir \n";
+
+##########################################
+##########################################
+#   START LOOP for Resources
+##########################################
+##########################################
+# Loop for each resource in config file
+foreach (@resources) 
+{
+	#Get the resource name
+	my $resource_name = $_ ;
+	print LOG_FILE "Writing script for resource $resource_name \n";
+	
+	#Get all from [resource]  
+	$key = $resource_name;
+	my $hash_resource_variables = $cfg->param(-block=>$key);
+
+	#Add the correct resource name  to the user variable
+	$hash_user_variables->{"resource_dir"} = lc ($resource_name);
+
+	#Get all from [resource_files]  
+	$key =   $resource_name . '_files';
+	my $hash_resource_files = $cfg->param(-block=>$key);
+	
+	#Initialise hash search  variables
+	$hash_search_variables = {};
+	$hash_search_variables = {%$hash_main_variables, %$hash_user_variables,%$hash_resource_variables,%$hash_resource_files};
+		
+			
+	#Get the  program directory from config file
+	$key = $resource_name . '.prog_dir';
+	my $prog_dir = $cfg->param($key);
+			
+		
+	#Get  YES or NO for parallel processing
+	$key = $resource_name . '.parallel_processing';
+	my $parallel_processing = $cfg->param($key);
+
+	if (!&check_for_empty_string (defined $parallel_processing)) {
+	
+		if (define $parallel_processing  eq lc ("yes")) {
+			$parallel_processing = 1;
+		}else {
+			$parallel_processing = 0;
+		}
+	} else {
+
+		$parallel_processing = 0;
+	}
+		
+	#Get all the programs required (accessing the programs block of ini file;)
+	$key =   $resource_name . '_programs';
+	my $hash_progs = $cfg->param(-block=>$key);
+							
+	#Get all the arguments required (accessing the programs block of ini file;)
+	$key =   $resource_name . '_arguments';
+	my $hash_args = $cfg->param(-block=>$key);
+	
+	#write to master script_file
+	print MASTER_FILE 'echo "Processing resource ...' . $resource_name . '"' . "\n";
+	print MASTER_FILE "date_time=`date`\n";
+	print MASTER_FILE 'echo "Processing resource ... ' . $resource_name . ' at $date_time" >>' . $log_file . "\n";
+		
+	#Loop for each program and write to master script
+	foreach $key (sort keys %{$hash_progs}) 
+	{
+		#Get the  program from hash
+		my $program = $hash_progs->{$key};
+		
+		#Get the  program arguments from hash
+		my @args = split ('\s+',$hash_args->{$key});
+		
+		my $command_arguments = "";
+		
+		foreach my $argument (@args) {
+			$command_arguments = $command_arguments . '"' . $argument . '" ';
+		}
+	
+		#check for user variables
+		$command_arguments = &check_for_variables ($command_arguments);
+		
+		#create system command and check for parallel processing
+		my $system_command = $prog_dir .  "/" . $program;
+		
+		#check for user variables
+		$system_command = &check_for_variables ($system_command);
+
+		
+		if ($parallel_processing == 1) {
+			$system_command = $system_command . " " .   $command_arguments . '&';
+		} else {
+				
+			$system_command = $system_command . " " . $command_arguments;
+		}
+		
+		#write to master script_file
+		print MASTER_FILE  $system_command .  " ||exit 1" . "\n";
+		print LOG_FILE "Writing to master_script for $program at " . localtime(time) . "\n";
+
+		print MASTER_FILE 'echo "program return error for ' . $program . '= " $?'  . "\n"; 
+		print MASTER_FILE "date_time=`date`\n";
+		print MASTER_FILE 'echo "Finished running ' . $program . ' at $date_time" >>' . $log_file . "\n";
+		print MASTER_FILE 'echo "Finished running ' . $program . ' at $date_time"'  . "\n";
+		
+	}
+	
+} # Loop for each resource  - foreach (@resources)
+
+
+print MASTER_FILE "date_time=`date`\n";
+print MASTER_FILE 'echo "Finished running Master script at $date_time" >>' . $log_file . "\n";
+print MASTER_FILE 'echo "Finished running Master script at $date_time"' . "\n";
+close MASTER_FILE;
+system("chmod +x " . $current_dir . "/" . $master_script);   
+
+if ( lc ($build_script_only) eq "yes") {
+	print  "\n" . 'Only master_script has been created [Use build_script_only="NO" in configuration file ' . $config_file . " to create proteome]\n";
+	print LOG_FILE 'Only master_script has been created [Use build_script_only="NO" in configuration file ' . $config_file . " to create proteome]\n";
+} else {
+	
+		
+	print LOG_FILE "Running master script at " . localtime(time) . "\n";
+
+	#close LOG FILE
+	close LOG_FILE;	
+
+	#run the master script and wait for return				
+	my $ret = system ("./$master_script");
+
+	# Open the log file
+	open LOG_FILE, '>>' . $log_file;
+	
+	if ($ret != 0 ) {
+
+		print LOG_FILE ">> ERROR: $run_type FAILED at " . localtime(time) . "\n";
+		print  "\n>> ERRORS encountered: Please check $log_file for details\n";	
+		$email_message = "Errors detected for $run_type";					
+	}else {
+	
+		print LOG_FILE "$run_type  successful at " . localtime(time) . "\n";
+		print  "\n>> FINISHED at " . localtime(time) . "\n";	
+		print LOG_FILE  "\n>> FINISHED at " . localtime(time) . "\n";	
+		$email_message = "$run_type finished";		
+	}
+
+
+	#Write e-mail script
+	open EMAIL_FILE,'>email_script';
+	print EMAIL_FILE "#!/bin/sh\n";
+	print EMAIL_FILE 'echo "' . "Refer to the attached log file for details" . '" | mutt -a "'  . $log_file . '" -s "' . $email_message . '" -- ' . $email_url . "\n";
+	system("chmod +x " . $current_dir . "/email_script");
+	
+	close EMAIL_FILE;
+		
+
+	#send e-mail
+	system("./email_script");
+	
+	if ( $? == -1 ) {
+		print  "ERROR: e-mail failed to send to $email_url\n";
+	} 
+
+	
+}
+
+#####################SUB ROUTINES ################################
+
+# sub-routine to remove  whitespace from the start and end of the string
+sub trim($)
+{
+	my $string = shift;
+	$string =~ s/^\s+//;
+	$string =~ s/\s+$//;
+	return $string;
+}
+
+
+#Check for empty string
+sub  check_for_empty_string ($)
+{
+	my $string = shift;
+	if ($string =~ m/^\s*$/) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+
+# sub-routine to check for user variables
+sub check_for_main_variables($)
+{
+	my $string = shift;
+	
+	#check for $ sign
+	if ($string =~ m/\$/){
+	
+		foreach my $key (sort keys %{$hash_main_variables}) 
+		{
+					
+			$string =~ s/\$$key/$hash_main_variables->{$key}/;
+					
+		}		
+	}
+	
+	return $string;
+}
+
+
+
+
+# sub-routine to check for variables
+sub check_for_variables($)
+{
+	my $string = shift;
+	
+
+	if ($string !~ m/\$/){
+		return $string;
+	}
+
+	
+	foreach my $change_from (sort keys %{$hash_search_variables}) 
+	{
+		
+		if ($string =~ m/\$\b$change_from\b/){
+
+			my $change_to = $hash_search_variables->{$change_from};
+			
+			
+			#check for $ sign
+			if ($change_to =~ m/\$/){
+				$change_to = &check_for_variables($change_to);
+			}
+
+			$string =~ s/\$$change_from/$change_to/;
+			
+		}
+	}
+
+	#check for $ sign
+	if (($string =~ m/\$/) && ($string !~ m/\$HOME/)) {
+		#invalid variable
+		print "\nERROR: an unknown variable exists in command line $string. Check $config_file\n";
+		exit;
+	} else {	
+		return $string;
+	}
+}
+
+
+
+
+
+
+		

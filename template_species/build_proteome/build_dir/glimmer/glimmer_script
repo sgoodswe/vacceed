@@ -1,0 +1,105 @@
+#!/bin/sh
+#Resource used: GLIMMER
+resource=glimmer
+short_name=gl
+
+#Get command prompts
+chromosomes=$1
+chr_dir=$2
+gene_dir=$3
+prot_dir=$4
+train_dir=$5
+out_dir=$6
+prog_dir=$7
+script_dir=$8
+prot_file=$9
+train_file=${10}
+map_dir=${11}
+assembly_dir=${12}
+common_dir=${13}
+sum_dir=${14}
+map_protein_gene=${15}
+map_extra=${16}
+prot_id_prefix=${17}
+
+#hard coding
+bg_mode=1
+blastp_on_nr=0
+
+
+
+#Main loop for writing scripts
+for chr_no in  $chromosomes
+do
+	
+	#Write the error function to script
+	$common_dir/error_script "$chr_no" "$script_dir"
+
+	#Program section
+	echo "echo Chromosome $chr_no" >> $script_dir/script$chr_no
+
+
+	echo "script_step=\"glimmerhmm_linux for $chr_no\"" >> $script_dir/script$chr_no
+	echo "glimmerhmm_linux $chr_dir/chr$chr_no.fasta -d $train_dir/$train_file -o $out_dir/chr$chr_no.gff -g \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"gl_genes.pl for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $prog_dir/gl_genes.pl chr$chr_no $chr_dir $out_dir \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"blastn on subject for $chr_no\"" >> $script_dir/script$chr_no
+	query_file="$out_dir/chr$chr_no.seq"
+	subject_file="$gene_dir/genes_chr$chr_no.fasta"
+	output_file="$out_dir/chr$chr_no\_blastn.txt"
+	format='"10 evalue qseqid qlen sseqid slen bitscore score pident nident mismatches positive"'
+	echo "blastn -query $query_file -subject $subject_file  -outfmt $format  -max_target_seqs  10 -out $output_file \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"e_blastn.pl on subject for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $common_dir/e_blastn.pl chr$chr_no $gene_dir $out_dir $assembly_dir $sum_dir $short_name \
+	|| error_exit" >> $script_dir/script$chr_no
+
+
+	echo "script_step=\"convert_dna_to_aa.pl for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl  $common_dir/convert_dna_to_aa.pl chr$chr_no $out_dir chr$chr_no\_mrna.seq \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"blastp on subject for $chr_no\"" >> $script_dir/script$chr_no
+	query_file="$out_dir/chr$chr_no.aa"
+	subject_file="$prot_dir/$prot_file"
+	output_file="$out_dir/chr$chr_no\_blastp.txt"
+	format='"10 evalue qseqid qlen sseqid slen bitscore score pident nident mismatches positive"'
+	echo "blastp -query $query_file -subject $subject_file  -outfmt $format  -max_target_seqs  10 -out $output_file \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"e_blastp.pl on subject for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $common_dir/e_blastp.pl chr$chr_no $prot_dir $sum_dir $out_dir $assembly_dir $map_dir $prot_file $short_name $map_protein_gene $map_extra \
+	$prot_id_prefix || error_exit" >> $script_dir/script$chr_no
+	
+
+	# blastp on the nr database is slow and therefore can optionally be ignored
+	if [ $blastp_on_nr == 1 ]; then
+		
+		echo "script_step=\"blastp on nr\"" >> $script_dir/script$chr_no
+		#Get the number of CPUs to determine the number ot threads to use
+		echo 'num_of_threads=`nproc`'  >> $script_dir/script$chr_no
+		query_file="$assembly_dir/chr$chr_no\_$short_name\_new_prot.fasta" 
+		output_file="$out_dir/chr$chr_no\_sim_blastp.txt"
+		num_of_threads='$num_of_threads'
+		echo "blastp -query $query_file -db nr  -outfmt $format  -num_threads=$num_of_threads -max_target_seqs  10 -out $output_file \
+		|| error_exit" >> $script_dir/script$chr_no
+
+		prot_id_prefix="gi"
+		echo "script_step=\"e_blastp_sim.pl for $chr_no\"" >> $script_dir/script$chr_no
+		echo "perl $common_dir/e_blastp_sim.pl chr$chr_no $prot_dir $prog_dir $out_dir $assembly_dir $map_dir $short_name $output_file $query_file \ 			$map_protein_gene $map_extra $prot_id_prefix || error_exit" >> $script_dir/script$chr_no
+		
+
+       fi
+	
+
+done
+
+## Run scripts for chromomsomes
+$common_dir/run_scripts "$resource" "$chromosomes" "$script_dir" "$bg_mode" || exit 1
+
+

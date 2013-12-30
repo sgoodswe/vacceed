@@ -1,0 +1,87 @@
+#!/bin/sh
+#Resource used:gmap
+resource=gmap
+short_name=gmap
+
+#Get command prompts
+chromosomes=$1
+chr_dir=$2
+gene_dir=$3
+out_dir=$4
+prog_dir=$5
+script_dir=$6
+est_dir=$7
+est_file=$8
+assembly_dir=$9
+common_dir=${10}
+sum_dir=${11}
+gmap_dir=${12}
+gmap_path=${13}
+
+#hard coding
+bg_mode=1
+est_mode=1 # a 1 if analysing a blast file from ESTs
+out_est_file="est_all.psl"
+
+#Write the error function to script
+script_no="a"
+$common_dir/error_script "$script_no" "$script_dir"
+
+#Program section
+echo "### Program section" >> $script_dir/script$script_no
+
+echo "script_step=\"executing gmap \"" >> $script_dir/script$script_no
+echo "gmap --dir=$gmap_path --db=$gmap_dir --format=1 $est_dir/$est_file  > $out_dir/$out_est_file 2>> $LOG_FILE \
+|| error_exit" >> $script_dir/script$script_no
+
+echo "script_step=\"split_psl.pl \"" >> $script_dir/script
+echo "perl $prog_dir/split_psl.pl $out_est_file $out_dir \
+|| error_exit" >> $script_dir/script$script_no
+
+
+
+##Run single script
+
+#Make script executable
+chmod +x $script_dir/script$script_no
+
+
+$script_dir/script$script_no || exit 1
+
+
+
+#Main loop for writing scripts
+for chr_no in  $chromosomes
+do
+	#Write the error function to script
+	$common_dir/error_script "$chr_no" "$script_dir"
+
+	#Program section
+	echo "### Program section" >> $script_dir/script$chr_no
+
+	
+	echo "script_step=\"psl_to_fasta.pl for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $common_dir/psl_to_fasta.pl $chr_no $est_dir $chr_dir $out_dir \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"blastn on subject for $chr_no\"" >> $script_dir/script$chr_no
+	query_file="$out_dir/chr$chr_no.seq"
+	subject_file="$gene_dir/genes_chr$chr_no.fasta"
+	output_file="$out_dir/chr$chr_no\_blastn.txt"
+	format='"10 evalue qseqid qlen sseqid slen bitscore score pident nident mismatches positive"'
+	echo "blastn -query $query_file -subject $subject_file  -outfmt $format  -max_target_seqs  10 -out $output_file \
+	|| error_exit" >> $script_dir/script$chr_no
+
+	echo "script_step=\"e_blastn.pl on subject for $chr_no\"" >> $script_dir/script$chr_no
+	echo "perl $common_dir/e_blastn.pl chr$chr_no $gene_dir $out_dir $assembly_dir $sum_dir $short_name $est_mode\
+	|| error_exit" >> $script_dir/script$chr_no
+	
+
+done
+
+## Run scripts for chromomsomes
+$common_dir/run_scripts "$resource" "$chromosomes" "$script_dir" "$bg_mode" || exit 1
+
+
+
+
