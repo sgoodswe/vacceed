@@ -1,4 +1,10 @@
 
+Vacceed v1.1 has been superseded by Vacceed v2.0 located at:
+
+https://github.com/goodswen/vacceed/releases
+
+
+
 ##### Vacceed 1.1 #####
 
 Vacceed is the collective name for a framework of linked bioinformatics programs, Perl scripts, R functions, and Linux scripts. It has been designed to facilitate an automated, high-throughput in silico approach to vaccine candidate discovery for eukaryotic pathogens. 
