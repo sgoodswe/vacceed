@@ -1,22 +1,7 @@
 
-##### Vacceed 1.1 #####
+#Vacceed v1.1# has been superseded by #Vacceed v2.1# located at:
 
-Vacceed is the collective name for a framework of linked bioinformatics programs, Perl scripts, R functions, and Linux scripts. It has been designed to facilitate an automated, high-throughput in silico approach to vaccine candidate discovery for eukaryotic pathogens. 
-
-To run Vacceed download the latest version from https://github.com/sgoodswe/vacceed/releases
-
-e.g. vacceed_vx.x.tar.gz (where x.x is the latest version number)
-
-Decompress:
-
-tar –zxvf vacceed_vx.x.tar.gz (where x.x is the latest version number)
-
-After decompressing the downloaded vacceed file, the directory can be moved to any location of your choice.
-
-
-Please refer to the Vacceed User Guide (PDF) for help on how to install, configure, and run Vacceed
-
-The document 'Vacceed_User_Guide' can be found in the directory vacceed/start or can be found at https://github.com/vacceed 
+#https://github.com/goodswen/vacceed/releases#
 
 
 
